@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,13 +16,14 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   File? _image;
+  final User? currentUser = FirebaseAuth.instance.currentUser;
 
-  String userName = 'John Doe';
-  String dob = "Jan 1, 1980";
-  String bloodType = "O+";
-  String weight = "75 kg";
-  String height = "180 cm";
-
+  // متغيرات لتخزين البيانات المجلوبة من Firebase
+  String userName = 'جارِ التحميل...';
+  String dob = "غير محدد";
+  String bloodType = "---";
+  String weight = "--- kg";
+  String height = "--- cm";
   String selectedAlarm = "Default";
 
   @override
@@ -30,14 +32,88 @@ class _ProfileScreenState extends State<ProfileScreen> {
     loadUserData();
   }
 
+  // 1. جلب البيانات من Firestore عند تشغيل الصفحة
   Future<void> loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final name = prefs.getString('userName');
-    final alarm = prefs.getString('alarmSound');
-    if (name != null && mounted) setState(() => userName = name);
-    if (alarm != null && mounted) setState(() => selectedAlarm = alarm);
+    if (currentUser != null) {
+      try {
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser!.uid)
+            .get();
+
+        if (userDoc.exists && mounted) {
+          setState(() {
+            // التعديل هنا: استخدمنا 'name' بدلاً من 'userName'
+            userName = userDoc['name'] ?? 'مستخدم جديد';
+
+            // هذه الحقول قد لا تكون موجودة في البداية، لذا نضع قيم افتراضية
+            dob = userDoc['dob'] ?? "لم يحدد";
+            bloodType = userDoc['bloodType'] ?? "---";
+            weight = userDoc['weight'] ?? "--- kg";
+            height = userDoc['height'] ?? "--- cm";
+          });
+        }
+      } catch (e) {
+        debugPrint("Error loading data: $e");
+      }
+    }
   }
 
+  //اختيار تاريخ ميلاد
+  Future<void> _selectDate() async {
+    DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime(1990),
+      firstDate: DateTime(1920),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      String formattedDate = "${picked.day}/${picked.month}/${picked.year}";
+      await updateFirestoreField("dob", formattedDate); // تحديث في فايربيس
+      setState(() => dob = formattedDate); // تحديث الواجهة
+    }
+  }
+
+  //دالة اختيار فصيلة الدم
+  void _selectBloodType() {
+    final types = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return ListView(
+          shrinkWrap: true,
+          children: types
+              .map(
+                (type) => ListTile(
+                  title: Text(type, textAlign: TextAlign.center),
+                  onTap: () async {
+                    await updateFirestoreField("bloodType", type);
+                    setState(() => bloodType = type);
+                    Navigator.pop(context);
+                  },
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  // 2. دالة تحديث الحقول في Firestore
+  Future<void> updateFirestoreField(String field, String value) async {
+    if (currentUser != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser!.uid)
+            .update({field: value});
+      } catch (e) {
+        debugPrint("Error updating $field: $e");
+      }
+    }
+  }
+
+  // 3. دالة اختيار الصورة الشخصية
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final XFile? pickedImage = await picker.pickImage(
@@ -48,20 +124,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  /* Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('isLoggedIn');
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
-  }*/
-
+  // 4. نافذة التعديل المنبثقة (تستخدم لجميع الحقول)
   Future<void> _editInfo(
     String title,
     String currentValue,
+    String firestoreField,
     Function(String) onSave,
   ) async {
     final controller = TextEditingController(text: currentValue);
@@ -74,10 +141,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           decoration: InputDecoration(
             hintText: "Enter $title",
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
           ),
         ),
         actions: [
@@ -89,18 +152,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () async {
               final newValue = controller.text.trim();
               if (newValue.isNotEmpty) {
-                if (title == "Name") {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString('userName', newValue);
-                  setState(() => userName = newValue);
-                } else {
-                  onSave(newValue);
-                }
+                await updateFirestoreField(firestoreField, newValue);
+                onSave(newValue);
                 Navigator.pop(context);
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            child: const Text("Save"),
+            child: const Text("Save", style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -128,7 +186,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ================= Profile Card =================
+  // الكرت العلوي: الصورة والاسم والتاريخ والفصيلة
   Widget _profileCard() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
@@ -178,28 +236,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          GestureDetector(
-            onTap: () => _editInfo(
-              "Name",
-              userName,
-              (v) => setState(() => userName = v),
-            ),
-            child: Text(
-              userName,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
+          Text(
+            userName,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
             ),
           ),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _smallInfo(Icons.cake, dob),
+              // اختيار التاريخ من التقويم
+              InkWell(onTap: _selectDate, child: _smallInfo(Icons.cake, dob)),
               const SizedBox(width: 20),
-              _smallInfo(Icons.bloodtype, bloodType),
+              // اختيار فصيلة الدم من قائمة
+              InkWell(
+                onTap: _selectBloodType,
+                child: _smallInfo(Icons.bloodtype, bloodType),
+              ),
             ],
           ),
         ],
@@ -217,7 +273,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ================= Info Card =================
+  // كرت الطول والوزن
   Widget _infoCard() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -234,23 +290,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Icons.monitor_weight,
             'Weight',
             weight,
-            onTap: () =>
-                _editInfo("Weight", weight, (v) => setState(() => weight = v)),
+            onTap: () => _editInfo(
+              "Weight",
+              weight,
+              "weight",
+              (v) => setState(() => weight = v),
+            ),
           ),
           const Divider(),
           _InfoTile(
             Icons.height,
             'Height',
             height,
-            onTap: () =>
-                _editInfo("Height", height, (v) => setState(() => height = v)),
+            onTap: () => _editInfo(
+              "Height",
+              height,
+              "height",
+              (v) => setState(() => height = v),
+            ),
           ),
         ],
       ),
     );
   }
 
-  // ================= Settings Card =================
+  // كرت الإعدادات والخروج
   Widget _settingsCard() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -267,12 +331,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             leading: const Icon(Icons.settings, color: Colors.blue),
             title: const Text('Settings'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
           ),
           const Divider(),
           ListTile(
@@ -290,22 +352,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       AlarmSoundScreen(selectedAlarm: selectedAlarm),
                 ),
               );
-              if (result != null) {
-                setState(() => selectedAlarm = result);
-              }
+              if (result != null) setState(() => selectedAlarm = result);
             },
           ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Log Out', style: TextStyle(color: Colors.red)),
-            //عدلت على زر الخروج بحيث يخرج من قاعدة البيانات
             onTap: () async {
               await FirebaseAuth.instance.signOut();
-
+              if (!mounted) return;
               Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false, // هذا يعني إزالة كل الصفحات السابقة
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
               );
             },
           ),
@@ -315,15 +374,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-// ================= InfoTile Widget =================
+// ويدجت الصفوف الصغيرة (الطول/الوزن)
 class _InfoTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String value;
   final VoidCallback? onTap;
-
   const _InfoTile(this.icon, this.title, this.value, {this.onTap});
-
   @override
   Widget build(BuildContext context) {
     return ListTile(
@@ -340,7 +397,7 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
-// ================= Alarm Sound Screen =================
+// صفحة اختيار نغمة المنبه
 class AlarmSoundScreen extends StatelessWidget {
   final String selectedAlarm;
   const AlarmSoundScreen({super.key, required this.selectedAlarm});

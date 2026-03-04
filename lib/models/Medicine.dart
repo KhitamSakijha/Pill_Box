@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Medicine {
-  final String id; // 🔑 Firestore ID
+  final String id;
   final String userId;
   String name;
   String dose;
@@ -12,6 +12,7 @@ class Medicine {
   String notes;
   bool withFood;
   bool isActive;
+  bool isTakenToday; // ✅ إضافة هذا الحقل لمعرفة حالة اليوم بسرعة
   List<TimeOfDay> times;
   List<DateTime> takenHistory;
 
@@ -26,6 +27,7 @@ class Medicine {
     this.notes = '',
     this.withFood = false,
     this.isActive = true,
+    this.isTakenToday = false, // افتراضياً false
     required this.times,
     List<DateTime>? takenHistory,
   }) : takenHistory = takenHistory ?? [];
@@ -33,6 +35,22 @@ class Medicine {
   // 🔹 من Firestore إلى Medicine
   factory Medicine.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    // فحص إذا كان قد تم أخذ أي جرعة اليوم لتحديث isTakenToday تلقائياً
+    List<DateTime> history = (data['takenHistory'] as List<dynamic>? ?? []).map(
+      (e) {
+        if (e is Timestamp) return e.toDate();
+        return DateTime.now();
+      },
+    ).toList();
+
+    bool takenToday = history.any(
+      (date) =>
+          date.year == DateTime.now().year &&
+          date.month == DateTime.now().month &&
+          date.day == DateTime.now().day,
+    );
+
     return Medicine(
       id: doc.id,
       userId: data['userId'] ?? '',
@@ -46,76 +64,18 @@ class Medicine {
       notes: data['notes'] ?? '',
       withFood: data['withFood'] ?? false,
       isActive: data['isActive'] ?? true,
+      isTakenToday:
+          data['isTakenToday'] ?? takenToday, // يأخذ القيمة من فيربيس أو يحسبها
       times: (data['times'] as List<dynamic>? ?? []).map((t) {
-        if (t is String && t.contains(':')) {
-          final split = t.split(':');
-          return TimeOfDay(
-            hour: int.tryParse(split[0]) ?? 8,
-            minute: int.tryParse(split[1]) ?? 0,
-          );
-        }
-        return TimeOfDay(hour: 8, minute: 0);
-      }).toList(),
-      takenHistory: (data['takenHistory'] as List<dynamic>? ?? []).map((e) {
-        if (e is Timestamp) return e.toDate();
-        if (e is String) return DateTime.tryParse(e) ?? DateTime.now();
-        return DateTime.now();
-      }).toList(),
-    );
-  }
-
-  // 🔹 من Map (SharedPreferences) إلى Medicine
-  factory Medicine.fromMap(Map<String, dynamic> map) {
-    final timesList = (map['times'] as List<dynamic>? ?? []).map((t) {
-      if (t is String && t.contains(':')) {
-        final split = t.split(':');
+        final split = t.toString().split(':');
         return TimeOfDay(
-          hour: int.tryParse(split[0]) ?? 8,
-          minute: int.tryParse(split[1]) ?? 0,
+          hour: int.parse(split[0]),
+          minute: int.parse(split[1]),
         );
-      }
-      return TimeOfDay(hour: 8, minute: 0);
-    }).toList();
-
-    final historyList = (map['takenHistory'] as List<dynamic>? ?? []).map((e) {
-      if (e is String) return DateTime.tryParse(e) ?? DateTime.now();
-      if (e is int) return DateTime.fromMillisecondsSinceEpoch(e);
-      return DateTime.now();
-    }).toList();
-
-    return Medicine(
-      id: map['id'] ?? '',
-      userId: map['userId'] ?? '',
-      name: map['name'] ?? '',
-      dose: map['dose'] ?? '',
-      frequency: map['frequency'] ?? 'Daily',
-      startDate: DateTime.tryParse(map['startDate'] ?? '') ?? DateTime.now(),
-      endDate:
-          DateTime.tryParse(map['endDate'] ?? '') ??
-          DateTime.now().add(Duration(days: 30)),
-      notes: map['notes'] ?? '',
-      withFood: map['withFood'] ?? false,
-      isActive: map['isActive'] ?? true,
-      times: timesList,
-      takenHistory: historyList,
+      }).toList(),
+      takenHistory: history,
     );
   }
-
-  // 🔹 من Medicine إلى Map (SharedPreferences)
-  Map<String, dynamic> toMap() => {
-    'id': id,
-    'userId': userId,
-    'name': name,
-    'dose': dose,
-    'frequency': frequency,
-    'startDate': startDate.toIso8601String(),
-    'endDate': endDate.toIso8601String(),
-    'notes': notes,
-    'withFood': withFood,
-    'isActive': isActive,
-    'times': times.map((t) => '${t.hour}:${t.minute}').toList(),
-    'takenHistory': takenHistory.map((d) => d.toIso8601String()).toList(),
-  };
 
   // 🔹 من Medicine إلى Firestore
   Map<String, dynamic> toFirestore() => {
@@ -128,14 +88,19 @@ class Medicine {
     'notes': notes,
     'withFood': withFood,
     'isActive': isActive,
+    'isTakenToday': isTakenToday, // ✅ مهم جداً لكي يغيره زميلك من خلال الجهاز
     'times': times.map((t) => '${t.hour}:${t.minute}').toList(),
     'takenHistory': takenHistory.map((d) => Timestamp.fromDate(d)).toList(),
   };
+
+  // دالة لمسح البيانات عند انتهاء اليوم (تستخدم في السيرفر أو عند فتح التطبيق لأول مرة في اليوم)
+  void resetDailyStatus() {
+    isTakenToday = false;
+  }
 }
 
-// ✅ Extensions خارج الكلاس
+// ✅ الـ Extensions بقيت كما هي لأن منطقها صحيح جداً
 extension MedicineExtensions on Medicine {
-  // الدالة nextDose
   DateTime? nextDose(DateTime day) {
     if (!isActive) return null;
     final d = DateTime(day.year, day.month, day.day);
@@ -149,29 +114,34 @@ extension MedicineExtensions on Medicine {
     return null;
   }
 
-  // نسبة الالتزام اليومية
   double dailyAdherence(DateTime day) {
     if (times.isEmpty) return 0;
     final d = DateTime(day.year, day.month, day.day);
-    final total = times.length;
     final taken = times.where((t) {
       final time = DateTime(d.year, d.month, d.day, t.hour, t.minute);
       return takenHistory.any((e) => e.isAtSameMomentAs(time));
     }).length;
-    return total == 0 ? 0 : (taken / total) * 100;
+    return (taken / times.length) * 100;
   }
 
-  // streak مستمر
   int streak() {
     if (takenHistory.isEmpty) return 0;
-    takenHistory.sort((a, b) => b.compareTo(a));
+    // ترتيب التاريخ من الأحدث للأقدم
+    var sortedHistory = List<DateTime>.from(takenHistory)
+      ..sort((a, b) => b.compareTo(a));
     int count = 0;
-    DateTime prev = DateTime.now();
-    for (final d in takenHistory) {
-      final diff = prev.difference(d).inDays;
-      if (diff <= 1) {
+    DateTime currentDay = DateTime.now();
+
+    for (var date in sortedHistory) {
+      final difference = DateTime(
+        currentDay.year,
+        currentDay.month,
+        currentDay.day,
+      ).difference(DateTime(date.year, date.month, date.day)).inDays;
+
+      if (difference <= 1) {
         count++;
-        prev = d;
+        currentDay = date;
       } else {
         break;
       }
@@ -179,7 +149,6 @@ extension MedicineExtensions on Medicine {
     return count;
   }
 
-  // الجرعات المتبقية لليوم
   List<TimeOfDay> remainingDoses(DateTime day) {
     final d = DateTime(day.year, day.month, day.day);
     return times.where((t) {
