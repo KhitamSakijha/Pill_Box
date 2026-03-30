@@ -5,6 +5,21 @@ allprojects {
     }
 }
 
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+tasks.register<Delete>("clean") {
+    delete(rootProject.buildDir)
+}
+/* 
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")
@@ -22,6 +37,7 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+*/
 /*dependencies {
     classpath 'com.android.tools.build:gradle:8.1.0' // أو أي إصدار تستخدمينه
-}*/
+}*/ 

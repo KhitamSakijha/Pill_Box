@@ -367,7 +367,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  medicine({required String name, required bool isActive}) {}
+  void medicine({required String name, required bool isActive}) {}
 }
 
 

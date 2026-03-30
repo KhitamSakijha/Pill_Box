@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+//import 'package:shared_preferences/shared_preferences.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
 
@@ -337,7 +337,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const Divider(),
-          ListTile(
+          /*ListTile(
             leading: const Icon(Icons.notifications, color: Colors.orange),
             title: const Text('Alarm Sound'),
             trailing: Text(
@@ -354,7 +354,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
               if (result != null) setState(() => selectedAlarm = result);
             },
-          ),
+          ),*/
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
@@ -398,7 +398,7 @@ class _InfoTile extends StatelessWidget {
 }
 
 // صفحة اختيار نغمة المنبه
-class AlarmSoundScreen extends StatelessWidget {
+/*class AlarmSoundScreen extends StatelessWidget {
   final String selectedAlarm;
   const AlarmSoundScreen({super.key, required this.selectedAlarm});
 
@@ -428,3 +428,4 @@ class AlarmSoundScreen extends StatelessWidget {
     );
   }
 }
+*/

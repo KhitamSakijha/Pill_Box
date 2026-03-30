@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'forgot_password_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -125,7 +126,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(color: Colors.blue),
                 ),
                 onTap: () {
-                  // TODO: implement change password functionality
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ForgotPasswordScreen()),
+                  );
                 },
               ),
             ),

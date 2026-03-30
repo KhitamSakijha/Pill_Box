@@ -12,7 +12,7 @@ class Medicine {
   String notes;
   bool withFood;
   bool isActive;
-  bool isTakenToday; // ✅ إضافة هذا الحقل لمعرفة حالة اليوم بسرعة
+  bool isTakenToday;
   List<TimeOfDay> times;
   List<DateTime> takenHistory;
 
@@ -27,7 +27,7 @@ class Medicine {
     this.notes = '',
     this.withFood = false,
     this.isActive = true,
-    this.isTakenToday = false, // افتراضياً false
+    this.isTakenToday = false,
     required this.times,
     List<DateTime>? takenHistory,
   }) : takenHistory = takenHistory ?? [];
@@ -36,7 +36,6 @@ class Medicine {
   factory Medicine.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
 
-    // فحص إذا كان قد تم أخذ أي جرعة اليوم لتحديث isTakenToday تلقائياً
     List<DateTime> history = (data['takenHistory'] as List<dynamic>? ?? []).map(
       (e) {
         if (e is Timestamp) return e.toDate();
@@ -60,12 +59,11 @@ class Medicine {
       startDate: (data['startDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       endDate:
           (data['endDate'] as Timestamp?)?.toDate() ??
-          DateTime.now().add(Duration(days: 30)),
+          DateTime.now().add(const Duration(days: 30)),
       notes: data['notes'] ?? '',
       withFood: data['withFood'] ?? false,
       isActive: data['isActive'] ?? true,
-      isTakenToday:
-          data['isTakenToday'] ?? takenToday, // يأخذ القيمة من فيربيس أو يحسبها
+      isTakenToday: data['isTakenToday'] ?? takenToday,
       times: (data['times'] as List<dynamic>? ?? []).map((t) {
         final split = t.toString().split(':');
         return TimeOfDay(
@@ -77,7 +75,51 @@ class Medicine {
     );
   }
 
-  // 🔹 من Medicine إلى Firestore
+  // 🔹 تصحيح دالة fromMap (للتعامل مع SharedPreferences)
+  factory Medicine.fromMap(Map<String, dynamic> map) {
+    return Medicine(
+      id: map['id'] ?? '',
+      userId: map['userId'] ?? '',
+      name: map['name'] ?? '',
+      dose: map['dose'] ?? '',
+      frequency: map['frequency'] ?? 'Daily',
+      startDate: DateTime.parse(map['startDate']),
+      endDate: DateTime.parse(map['endDate']),
+      notes: map['notes'] ?? '',
+      withFood: map['withFood'] ?? false,
+      isActive: map['isActive'] ?? true,
+      isTakenToday: map['isTakenToday'] ?? false,
+      times: (map['times'] as List<dynamic>).map((t) {
+        final split = t.toString().split(':');
+        return TimeOfDay(
+          hour: int.parse(split[0]),
+          minute: int.parse(split[1]),
+        );
+      }).toList(),
+      takenHistory: (map['takenHistory'] as List<dynamic>)
+          .map((e) => DateTime.parse(e))
+          .toList(),
+    );
+  }
+
+  // 🔹 تصحيح دالة toMap (للتحويل إلى JSON)
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'userId': userId,
+    'name': name,
+    'dose': dose,
+    'frequency': frequency,
+    'startDate': startDate.toIso8601String(),
+    'endDate': endDate.toIso8601String(),
+    'notes': notes,
+    'withFood': withFood,
+    'isActive': isActive,
+    'isTakenToday': isTakenToday,
+    'times': times.map((t) => '${t.hour}:${t.minute}').toList(),
+    'takenHistory': takenHistory.map((d) => d.toIso8601String()).toList(),
+  };
+
+  // 🔹 التحويل لـ Firestore
   Map<String, dynamic> toFirestore() => {
     'userId': userId,
     'Medicinename': name,
@@ -88,18 +130,17 @@ class Medicine {
     'notes': notes,
     'withFood': withFood,
     'isActive': isActive,
-    'isTakenToday': isTakenToday, // ✅ مهم جداً لكي يغيره زميلك من خلال الجهاز
+    'isTakenToday': isTakenToday,
     'times': times.map((t) => '${t.hour}:${t.minute}').toList(),
     'takenHistory': takenHistory.map((d) => Timestamp.fromDate(d)).toList(),
   };
 
-  // دالة لمسح البيانات عند انتهاء اليوم (تستخدم في السيرفر أو عند فتح التطبيق لأول مرة في اليوم)
   void resetDailyStatus() {
     isTakenToday = false;
   }
 }
 
-// ✅ الـ Extensions بقيت كما هي لأن منطقها صحيح جداً
+// الـ Extensions تظل كما هي
 extension MedicineExtensions on Medicine {
   DateTime? nextDose(DateTime day) {
     if (!isActive) return null;
